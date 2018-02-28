@@ -185,6 +185,16 @@ class OpenIDConnectClient
     private $wellKnown = false;
 
     /**
+     * @var bool allow plain jwt without encryption
+     */
+    private $allowPlainJWT = false;
+
+    /**
+     * @var array holds a list of allowed issuers in addition to the provider url
+     */
+    private $issuers = [];
+
+    /**
      * @var int timeout (seconds)
      */
     protected $timeOut = 60;
@@ -515,7 +525,7 @@ class OpenIDConnectClient
  /**
      * Requests a resource owner token
      * (Defined in https://tools.ietf.org/html/rfc6749#section-4.3)
-     * 
+     *
      * @param $bClientAuth boolean Indicates that the Client ID and Secret be used for client authentication
      */
     public function requestResourceOwnerToken($bClientAuth =  FALSE) {
@@ -670,7 +680,7 @@ class OpenIDConnectClient
 	}
         return $rsa->verify($payload, $signature);
     }
-	
+
     /**
      * @param string $hashtype
      * @param object $key
@@ -701,6 +711,9 @@ class OpenIDConnectClient
         $parts = explode(".", $jwt);
         $signature = base64url_decode(array_pop($parts));
         $header = json_decode(base64url_decode($parts[0]));
+        if ($this->allowPlainJWT && $header->alg === 'none') {
+            return true;
+        }
         $payload = implode(".", $parts);
         $jwks = json_decode($this->fetchURL($this->getProviderConfigValue('jwks_uri')));
         if ($jwks === NULL) {
@@ -722,7 +735,7 @@ class OpenIDConnectClient
         case 'HS384':
             $hashtype = 'SHA' . substr($header->alg, 2);
             $verified = $this->verifyHMACJWTsignature($hashtype, $this->getClientSecret(), $payload, $signature);
-            break;		
+            break;
         default:
             throw new OpenIDConnectClientException('No support for signature type: ' . $header->alg);
         }
@@ -744,9 +757,9 @@ class OpenIDConnectClient
             $len = ((int)$bit)/16;
             $expecte_at_hash = $this->urlEncode(substr(hash('sha'.$bit, $accessToken, true), 0, $len));
         }
-        return (($claims->iss == $this->getProviderURL())
+        return (in_array($claims->iss, array_merge($this->issuers, [$this->getProviderURL()]))
             && (($claims->aud == $this->clientID) || (in_array($this->clientID, $claims->aud)))
-            && ($claims->nonce == $this->getNonce())
+            && ( !isset($claims->nonce) || $claims->nonce == $this->getNonce())
             && ( !isset($claims->exp) || $claims->exp >= time())
             && ( !isset($claims->nbf) || $claims->nbf <= time())
             && ( !isset($claims->at_hash) || $claims->at_hash == $expecte_at_hash )
@@ -1229,6 +1242,24 @@ class OpenIDConnectClient
     }
 
     /**
+     * @param bool $allowPlainJWT
+     */
+    public function setAllowPlainJWT($allowPlainJWT) {
+        $this->allowPlainJWT = $allowPlainJWT;
+    }
+
+    /**
+     * adds issuer to allowed issuer list
+     * @param $issuer mixed may be a string or an array of issuers
+     */
+    public function addIssuer($issuer) {
+        if (!is_array($issuer)) {
+            $issuer = [$issuer];
+        }
+        $this->issuers = array_merge($this->issuers, $issuer);
+    }
+
+    /**
      * Set timeout (seconds)
      *
      * @param int $timeout
@@ -1242,7 +1273,7 @@ class OpenIDConnectClient
     {
         return $this->timeOut;
     }
-	
+
     /**
      * Safely calculate length of binary string
      * @param string
