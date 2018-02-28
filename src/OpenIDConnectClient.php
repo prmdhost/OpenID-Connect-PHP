@@ -758,7 +758,7 @@ class OpenIDConnectClient
             $expecte_at_hash = $this->urlEncode(substr(hash('sha'.$bit, $accessToken, true), 0, $len));
         }
         return (in_array($claims->iss, array_merge($this->issuers, [$this->getProviderURL()]))
-            && (($claims->aud == $this->clientID) || (in_array($this->clientID, $claims->aud)))
+            && ( !isset($claims->aud) || ($claims->aud == $this->clientID) || (in_array($this->clientID, $claims->aud)))
             && ( !isset($claims->nonce) || $claims->nonce == $this->getNonce())
             && ( !isset($claims->exp) || $claims->exp >= time())
             && ( !isset($claims->nbf) || $claims->nbf <= time())
